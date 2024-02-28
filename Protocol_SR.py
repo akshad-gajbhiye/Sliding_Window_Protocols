@@ -1,5 +1,5 @@
 # SimPy models for rdt_Sender and rdt_Receiver
-# implementing the SR Protocol
+# implementing the Selective Repeatative Protocol
 
 # Author: Akshad Vivek Gajbhiye
 
@@ -28,6 +28,8 @@ class rdt_Sender(object):
 		self.base=1 # base of the current window 
 		self.nextseqnum=1 # next sequence number
 		self.sndpkt= {} # a buffer for storing the packets to be sent (implemented as a Python dictionary)
+		self.timers= {} # a buffer for storing timers
+		self.running= {}
 
 		# some other variables to maintain sender-side statistics
 		self.total_packets_sent=0
@@ -59,8 +61,11 @@ class rdt_Sender(object):
 			self.total_packets_sent+=1
 			
 			# start the timer if required
-			if(self.base==self.nextseqnum):
-				self.start_timer()
+			#if(self.base==self.nextseqnum):
+			#	self.start_timer()
+			self.start_timer(self.nextseqnum)
+			#self.timers[self.nextseqnum]=1
+			print(self.timers)
 			# update the nextseqnum
 			self.nextseqnum = (self.nextseqnum+1)%self.K
 			return True
@@ -74,90 +79,100 @@ class rdt_Sender(object):
 		# when an ACK packet arrives
 		
 		if (packt.corrupted==False):
-			
-			
+			print("TIME:",self.env.now,"RDT_SENDER: Got ACK",packt.seq_num)
+			print(self.timers)
 			# check if we got an ACK for a packet within the current window.
-			if(packt.seq_num in self.sndpkt.keys()):
-				
-				# Since this is a cumulative acknowledgement,
-				# all unacknowledged packets that were sent so far up-to 
-				# the acknowledged sequence number can be treated as already acked, 
-				# and removed from the buffer.
-				
-				while (self.base!=packt.seq_num):
-					# remove packet from buffer
-					# and slide the window right
-					del self.sndpkt[self.base]
-					self.base = (self.base + 1)%self.K
+			if packt.seq_num in self.sndpkt.keys():
+				if packt.seq_num == self.base:
+                    # stop the timer for the packet at base
+					self.stop_timer(packt.seq_num)
+                    # slide the window
+					self.base = (self.base + 1) % self.K
+					del self.sndpkt[packt.seq_num]
+					del self.timers[packt.seq_num]
+					print("after delete:", self.timers)
 
-				assert(self.base==packt.seq_num)
-				# remove the acked packet from buffer
-				# and slide the window right
-				del self.sndpkt[self.base]
-				self.base = (self.base + 1)%self.K
-				
-				# if there are no more packets to be acked, stop the timer.
-				if(self.base==self.nextseqnum):
-					self.stop_timer() # no more pending ACKs. Just stop the timer.
+                    # # start timer for the new base packet
+					# if (self.base + self.N - 1) % self.K in self.sndpkt:
+					# 	self.start_timer((self.base + self.N - 1) % self.K)
+					#if (packt.seq_num == self.base):
+				    #while(self.base in self.timers):
+					while (self.base in self.timers):
+						if (self.running[self.base]==False):
+							del self.sndpkt[self.base]
+							del self.timers[self.base]
+							self.base = (self.base + 1) % self.K
+						else:
+							break
 				else:
-					self.restart_timer() # restart the timer, for a pending ACK of packet at base
-				
-				# exit the while loop
-				print("TIME:",self.env.now,"RDT_SENDER: Got an ACK",packt.seq_num,". Updated window:", [(self.base+i)%self.K for i in range(0,self.N)],"base =",self.base,"nextseqnum =",self.nextseqnum)
+					self.stop_timer(packt.seq_num)
+					
+				print("TIME:", self.env.now, "RDT_SENDER: Got an ACK", packt.seq_num,". Updated window:", [(self.base + i) % self.K for i in range(0, self.N)], "base =", self.base,"nextseqnum =", self.nextseqnum)
 			else:
-				print("TIME:",self.env.now,"RDT_SENDER: Got an ACK",packt.seq_num," for a packet in the old window. Ignoring it.")
-
-	# Finally, these functions are used for modeling a Timer's behavior.
-	def timer_behavior(self):
+				print("TIME:", self.env.now, "RDT_SENDER: Got an ACK", packt.seq_num, " for a packet not in the buffer. Ignoring it.")
+	
+    # Finally, these functions are used for modeling a Timer's behavior.
+	def timer_behavior(self,seq_num):
 		try:
 			# Wait for timeout 
 			self.timer_is_running=True
+			self.running[seq_num]=True
 			yield self.env.timeout(self.timeout_value)
 			self.timer_is_running=False
+			self.running[seq_num]=False
 			# take some actions 
-			self.timeout_action()
+			self.timeout_action(seq_num)
 		except simpy.Interrupt:
 			# stop the timer
 			self.timer_is_running=False
+			self.running[seq_num]=False
 
 	# This function can be called to start the timer
-	def start_timer(self):
-		assert(self.timer_is_running==False)
-		self.timer=self.env.process(self.timer_behavior())
-		print("TIME:",self.env.now,"TIMER STARTED for a timeout of ",self.timeout_value)
+	def start_timer(self,seq_num):
+		#assert(self.timer_is_running==False
+		assert ((seq_num in self.timers.keys())==False)
+		self.timers[seq_num]=self.env.process(self.timer_behavior(seq_num))
+		#print("after starting",self.timers.keys())
+		print("TIME:",self.env.now,"TIMER STARTED for a timeout of ",self.timeout_value, "for Packet", seq_num)
 
 	# This function can be called to stop the timer
-	def stop_timer(self):
-		assert(self.timer_is_running==True)
-		self.timer.interrupt()
-		print("TIME:",self.env.now,"TIMER STOPPED.")
+	def stop_timer(self,seq_num):
+		#assert(self.timer_is_running==True)
+		assert ((seq_num in self.timers.keys())==True)
+		#del self.timers[seq_num]
+		#print("after stop", self.timers.keys())
+		self.timers[seq_num].interrupt()
+		print("TIME:",self.env.now,"TIMER STOPPED for Packet", seq_num)
 	
-	def restart_timer(self):
+	def restart_timer(self,seq_num):
 		# stop and start the timer
-		assert(self.timer_is_running==True)
-		self.timer.interrupt()
+		assert((seq_num in self.timers.keys())==True)
+		#self.timers[seq_num].interrupt()
+		#del self.timers[seq_num]
 		#assert(self.timer_is_running==False)
-		self.timer=self.env.process(self.timer_behavior())
-		print("TIME:",self.env.now,"TIMER RESTARTED for a timeout of ",self.timeout_value)
+		self.stop_timer(seq_num)
+		self.timer=self.env.process(self.timer_behavior(seq_num))
+		self.timers[seq_num]=self.env.process(self.timer_behavior(seq_num))
+		print("TIME:",self.env.now,"TIMER RESTARTED for a timeout of ",self.timeout_value, "for Packet", seq_num)
 
 
 	# Actions to be performed upon timeout
-	def timeout_action(self):
+	def timeout_action(self, seq_num):
 		
-		# re-send all the packets for which an ACK has been pending
-		packets_to_be_resent = list(self.sndpkt.keys())
-		print("TIME:",self.env.now,"RDT_SENDER: TIMEOUT OCCURED. Re-transmitting packets",packets_to_be_resent)
-		for seq_num in packets_to_be_resent:
-			self.channel.udt_send(self.sndpkt[seq_num])
-			self.num_retransmissions+=1
-			self.total_packets_sent+=1
-		
+		# re-send the packet for which an ACK has been pending
+		print("TIME:",self.env.now,"RDT_SENDER: TIMEOUT OCCURED. Re-transmitting packet: ",seq_num)
+		self.channel.udt_send(self.sndpkt[seq_num])
+		self.num_retransmissions+=1
+		self.total_packets_sent+=1
 		# Re-start the timer
-		self.start_timer()
+		#self.timers[seq_num].interrupt()
+		#self.stop_timer(seq_num)
+		del self.timers[seq_num]
+		self.start_timer(seq_num)
 		
 	# A function to print the current window position for the sender.
 	def print_status(self):
-		print("TIME:",self.env.now,"Current window:", [(self.base+i)%self.K for i in range(0,self.N)],"base =",self.base,"nextseqnum =",self.nextseqnum)
+		print("TIME:",self.env.now,"Current Sender window:", [(self.base+i)%self.K for i in range(0,self.N)],"base =",self.base,"nextseqnum =",self.nextseqnum)
 		print("---------------------")
 
 
@@ -174,10 +189,15 @@ class rdt_Receiver(object):
 
 		# some default parameter values
 		self.ack_packet_length=10 # bits
-		self.K=16 # range of sequence numbers expected
+		self.N=6 # range of sequence numbers expected
+		self.K=10 # Packet Sequence numbers can range from 0 to K-1
+
+		# some state variables and parameters for the Go-Back-N Protocol
+		self.base=1 # base of the current window 
+		self.nextseqnum=1 # next sequence number
+		self.pkts= {} # a buffer for storing the packets to be sent (implemented as a Python dictionary)
 
 		#initialize state variables
-		self.expectedseqnum=1
 		self.sndpkt= Packet(seq_num=0, payload="ACK",packet_length=self.ack_packet_length)
 		self.total_packets_sent=0
 		self.num_retransmissions=0
@@ -187,33 +207,23 @@ class rdt_Receiver(object):
 	def rdt_rcv(self,packt):
 		# This function is called by the lower-layer 
 		# when a packet arrives at the receiver
-		if(packt.corrupted==False and packt.seq_num==self.expectedseqnum):
-			
-			# extract and deliver data
-			self.receiving_app.deliver_data(packt.payload)
-			print("TIME:",self.env.now,"RDT_RECEIVER: got expected packet",packt.seq_num,". Sent ACK",self.expectedseqnum)
-			
-			# send an ACK for the newly received packet
-			self.sndpkt= Packet(seq_num=self.expectedseqnum, payload="ACK",packet_length=self.ack_packet_length) 
+		if(packt.corrupted==False):
+			print("TIME:",self.env.now,"RDT_RECEIVER: Got packet",packt.seq_num,". Sent ACK")
+			self.sndpkt= Packet(seq_num=packt.seq_num, payload="ACK",packet_length=self.ack_packet_length) 
 			self.channel.udt_send(self.sndpkt)
 			self.total_packets_sent+=1
-			
-			
-			# increment the expectedseqnum modulo K
-			self.expectedseqnum = (self.expectedseqnum + 1)%self.K 
-			
-			
-		else:
-			# got a corrupted or unexpected packet.
-			# send the ACK for the oldest packet received successfully
-			if(packt.corrupted):
-				print("TIME:",self.env.now,"RDT_RECEIVER: got corrupted packet",". Sent ACK",self.sndpkt.seq_num)
-			else:
-				print("TIME:",self.env.now,"RDT_RECEIVER: got unexpected packet with sequence number",packt.seq_num,". Sent ACK",self.sndpkt.seq_num)
-			
-			# send back the old ACK packet
-			self.channel.udt_send(self.sndpkt)
-			self.total_packets_sent+=1
-			self.num_retransmissions+=1
-		
 
+		if(packt.corrupted==False and packt.seq_num in [(self.base+i)%self.K for i in range(0,self.N)]):
+			self.pkts[packt.seq_num] = packt			
+			# extract and deliver data
+			print("Packets stored: ", self.pkts)
+			if (packt.seq_num == self.base):
+				while(self.base in self.pkts):
+					self.receiving_app.deliver_data(self.pkts[self.base].payload)
+					print("TIME:",self.env.now,"RDT_RECEIVER: Delivered data:",packt.seq_num,". to RECEIVING APPLICATION")
+					del self.pkts[self.base]
+					self.base = (self.base + 1) % self.K
+				print("TIME:",self.env.now,"Current Receiver window:", [(self.base+i)%self.K for i in range(0,self.N)],"base =",self.base,"nextseqnum =",self.nextseqnum)
+		
+		else:
+			print("TIME:",self.env.now,"RDT_RECEIVER: got corrupted packet")
