@@ -64,8 +64,9 @@ class rdt_Sender(object):
 			#if(self.base==self.nextseqnum):
 			#	self.start_timer()
 			self.start_timer(self.nextseqnum)
+			print("Timer dictionary: ", self.timers)
 			#self.timers[self.nextseqnum]=1
-			print(self.timers)
+			#print(self.timers)
 			# update the nextseqnum
 			self.nextseqnum = (self.nextseqnum+1)%self.K
 			return True
@@ -79,8 +80,8 @@ class rdt_Sender(object):
 		# when an ACK packet arrives
 		
 		if (packt.corrupted==False):
-			print("TIME:",self.env.now,"RDT_SENDER: Got ACK",packt.seq_num)
-			print(self.timers)
+			#print("TIME:",self.env.now,"RDT_SENDER: Got ACK",packt.seq_num)
+			#print(self.timers)
 			# check if we got an ACK for a packet within the current window.
 			if packt.seq_num in self.sndpkt.keys():
 				if packt.seq_num == self.base:
@@ -90,7 +91,7 @@ class rdt_Sender(object):
 					self.base = (self.base + 1) % self.K
 					del self.sndpkt[packt.seq_num]
 					del self.timers[packt.seq_num]
-					print("after delete:", self.timers)
+					#print("after delete:", self.timers)
 
                     # # start timer for the new base packet
 					# if (self.base + self.N - 1) % self.K in self.sndpkt:
@@ -212,6 +213,7 @@ class rdt_Receiver(object):
 			self.sndpkt= Packet(seq_num=packt.seq_num, payload="ACK",packet_length=self.ack_packet_length) 
 			self.channel.udt_send(self.sndpkt)
 			self.total_packets_sent+=1
+			self.num_retransmissions+=1
 
 		if(packt.corrupted==False and packt.seq_num in [(self.base+i)%self.K for i in range(0,self.N)]):
 			self.pkts[packt.seq_num] = packt			
@@ -223,6 +225,7 @@ class rdt_Receiver(object):
 					print("TIME:",self.env.now,"RDT_RECEIVER: Delivered data:",packt.seq_num,". to RECEIVING APPLICATION")
 					del self.pkts[self.base]
 					self.base = (self.base + 1) % self.K
+					self.num_retransmissions-=1
 				print("TIME:",self.env.now,"Current Receiver window:", [(self.base+i)%self.K for i in range(0,self.N)],"base =",self.base,"nextseqnum =",self.nextseqnum)
 		
 		else:

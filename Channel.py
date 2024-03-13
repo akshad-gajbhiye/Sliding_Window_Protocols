@@ -59,6 +59,7 @@ class UnreliableChannel(object):
 			# If the packet isn't lost, it should reach the destination.
 			# Now wait for "propagation_delay" amount of time
 			yield self.env.timeout(propagation_delay)
+			#yield self.env.timeout(random.randint(1,2))
 			# deliver the packet by calling the rdt_rcv()
 			# function on the receiver side.
 			self.receiver.rdt_rcv(packt)

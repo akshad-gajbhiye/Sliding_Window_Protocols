@@ -6,7 +6,7 @@
 import simpy
 from Applications import SendingApplication,ReceivingApplication
 from Channel import UnreliableChannel
-from Protocol_GBN import rdt_Sender, rdt_Receiver
+from Protocol_SR import rdt_Sender, rdt_Receiver
 
 
 # Create a simulation environment
@@ -19,16 +19,16 @@ receiving_app = ReceivingApplication(env)
 rdt_sender	  = rdt_Sender(env=env)
 rdt_receiver  = rdt_Receiver(env=env)
 # create the DATA and ACK channels and set channel parameters
-channel_for_data  = UnreliableChannel(env=env,name="DATA_CHANNEL",Pc=0.5,Pl=0.5,propagation_delay=2, transmission_rate=1000)
-channel_for_ack	  = UnreliableChannel(env=env,name="ACK_CHANNEL", Pc=0.5,Pl=0.5,propagation_delay=2, transmission_rate=1000)
+channel_for_data  = UnreliableChannel(env=env,name="DATA_CHANNEL",Pc=0.1,Pl=0.1,propagation_delay=2, transmission_rate=1000)
+channel_for_ack	  = UnreliableChannel(env=env,name="ACK_CHANNEL", Pc=0.1,Pl=0.1,propagation_delay=2, transmission_rate=1000)
 
 
 # Set some parameters for the Go-Back-N Protocol
-rdt_sender.N=11	# Window size for the sender
-rdt_receiver.N=11 # Window size for the receiver (Note: This is ignored in the GBN protocol, but required in the SR protocol)
-rdt_sender.K=23 # Packet sequence numbers range from 0 to K-1
-rdt_receiver.K=23 # Packet sequence numbers range from 0 to K-1
-rdt_sender.timeout_value=4	# Timeout value for the sender
+rdt_sender.N=5	# Window size for the sender
+rdt_receiver.N=5 # Window size for the receiver (Note: This is ignored in the GBN protocol, but required in the SR protocol)
+rdt_sender.K=15 # Packet sequence numbers range from 0 to K-1
+rdt_receiver.K=15 # Packet sequence numbers range from 0 to K-1
+rdt_sender.timeout_value=5	# Timeout value for the sender
 rdt_sender.data_packet_length=1000 # length of the DATA packet in bits
 rdt_receiver.ack_packet_length=10 # length of the ACK packet in bits
 
@@ -48,7 +48,7 @@ channel_for_ack.receiver = rdt_sender
 # Run the simulation until TOTAL_SIMULATION_TIME elapses OR the receiver receives a certain 
 # number of messages in total, whichever occurs earlier.
 
-TOTAL_SIMULATION_TIME=500000  # <==== Total simulation time. Increase it as you like.
+TOTAL_SIMULATION_TIME=1000  # <==== Total simulation time. Increase it as you like.
 t=0
 while env.peek() <= TOTAL_SIMULATION_TIME:
 	if(env.peek()>t):
@@ -58,7 +58,7 @@ while env.peek() <= TOTAL_SIMULATION_TIME:
 	# We may wish to halt the simulation if some condition occurs.
 	# For example, if the receiving application recives 100 messages.
 	num_msg = receiving_app.total_messages_received
-	if num_msg >= 1000: # <=== Halt simulation when receiving application receives these many messages.
+	if num_msg >= 10000000: # <=== Halt simulation when receiving application receives these many messages.
 		print("\n\nReceiving application received",num_msg,"messages. Halting simulation.")
 		break
 if t==TOTAL_SIMULATION_TIME:
